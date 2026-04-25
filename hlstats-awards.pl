@@ -1250,6 +1250,12 @@ sub DoPruning
     my $result = query_now("SELECT `value` FROM hlstats_Options WHERE keyname='DeleteDays'");
     ($g_deletedays) = $result->fetchrow_array;
 
+    if (!$g_deletedays)
+    {
+        print "++ Pruning skipped (DeleteDays=0)\n";
+        return;
+    }
+
     print "++ Cleaning up database using per-player sliding window ($g_deletedays days)\n";
 
     foreach my $eventTable (keys %g_eventTables)

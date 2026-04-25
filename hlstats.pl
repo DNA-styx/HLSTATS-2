@@ -3194,7 +3194,7 @@ $s_port = "27500";
 $g_mailto = "";
 $g_mailpath = "/bin/mail";
 $g_mode = "Normal";
-$g_deletedays = 5;
+$g_deletedays = 28;
 $g_requiremap = 0;
 $g_debug = 1;
 $g_nodebug = 0;
@@ -3654,7 +3654,9 @@ if ($g_stdin == 0) {
             my ($daemon, $tx) = @_;
             my $addr = $tx->req->headers->header('X-Server-Addr') // ($tx->remote_address . ":" . $tx->remote_port);
             my $body = $tx->req->body // '';
-            $tx->res->code(200)->body("OK\n");
+            $tx->res->code(200);
+            $tx->res->headers->content_type('text/plain');
+            $tx->res->body("OK\n");
             $tx->resume;
             my @lines = split(/\r?\n/, $body);
             for my $data (@lines) {

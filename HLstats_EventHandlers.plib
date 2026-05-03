@@ -35,7 +35,7 @@ sub get_fav_weapon  {
     my ($fav_weapon, $fav_weapon_kills, $fav_weapon_headshots) = $result->fetchrow_array;
     $result->finish;
 
-    my $result = query_now("
+    my $result2 = query_now("
         SELECT
             IFNULL(ROUND((SUM(hlstats_Events_Statsme.hits) / SUM(hlstats_Events_Statsme.shots) * 100), 0), 0) AS acc
         FROM
@@ -46,10 +46,10 @@ sub get_fav_weapon  {
             AND hlstats_Events_Statsme.weapon= ?
         LIMIT 0,1    
     ",$g_servers{$s_addr}->{game},$player->{playerid},$fav_weapon);
-    my ($fav_weapon_sm_acc) = $result->fetchrow_array;
-    $result->finish;
+    my ($fav_weapon_sm_acc) = $result2->fetchrow_array;
+    $result2->finish;
 
-    my $result = query_now("
+    my $result3 = query_now("
         SELECT
             hlstats_Events_Frags.weapon,
             COUNT(hlstats_Events_Frags.weapon) AS kills,
@@ -67,12 +67,12 @@ sub get_fav_weapon  {
         LIMIT 0, 1    
     ",$g_servers{$s_addr}->{game},$player->{playerid},$p_connect_time);
 
-    my ($s_fav_weapon, $s_fav_weapon_kills, $s_fav_weapon_headshots) = $result->fetchrow_array;
-    $result->finish;
+    my ($s_fav_weapon, $s_fav_weapon_kills, $s_fav_weapon_headshots) = $result3->fetchrow_array;
+    $result3->finish;
     my $s_fav_weapon_sm_acc = 0;
    
     if (($s_fav_weapon) && ($s_fav_weapon_kills > 0)) {
-        my $result = query_now("
+        my $result4 = query_now("
             SELECT
                 IFNULL(ROUND((SUM(hlstats_Events_Statsme.hits) / SUM(hlstats_Events_Statsme.shots) * 100), 0), 0) AS acc
             FROM
@@ -84,11 +84,11 @@ sub get_fav_weapon  {
                 AND (hlstats_Events_Statsme.eventTime > FROM_UNIXTIME(?))
             LIMIT 0,1    
         ",$g_servers{$s_addr}->{game},$player->{playerid},$s_fav_weapon,$p_connect_time);
-        ($s_fav_weapon_sm_acc) = $result->fetchrow_array;
-        $result->finish;
+        ($s_fav_weapon_sm_acc) = $result4->fetchrow_array;
+        $result4->finish;
     }
    
-    return ($g_games{$g_servers{$s_addr}->{game}}{weapons}{$fav_weapon}{name}, $fav_weapon_kills, $fav_weapon_sm_acc, $g_games{$g_servers{$s_addr}->{game}}{weapons}{$s_fav_weapon}{name}, $s_fav_weapon_kills, $s_fav_weapon_sm_acc);
+    return ($g_games{$g_servers{$s_addr}->{game}}{weapons}{$fav_weapon}{name}, $fav_weapon_kills, $fav_weapon_sm_acc, $s_fav_weapon ? $g_games{$g_servers{$s_addr}->{game}}{weapons}{$s_fav_weapon}{name} : "-", $s_fav_weapon_kills // 0, $s_fav_weapon_sm_acc // 0);
 }
 
 sub get_next_ranks
@@ -116,7 +116,7 @@ sub get_next_ranks
     my $osd_message = "->1 - Next Players\\n";
     my $position = sprintf("   %02d  %s - %s", $ranknumber, number_format($base), $playerName)."\\n";
    
-    my $result = query_now("
+    my $result2 = query_now("
         SELECT
             playerId,
             lastName,
@@ -134,15 +134,15 @@ sub get_next_ranks
         LIMIT 0,5
     ", $player->{game}, $base, $player->{playerid});
 
-    my $i = $ranknumber-$result->rows-1;
-    while (my ($playerId, $lastName, $p_base, $kpd) = $result->fetchrow_array) {
+    my $i = $ranknumber-$result2->rows-1;
+    while (my ($playerId, $lastName, $p_base, $kpd) = $result2->fetchrow_array) {
         if (length($lastName) > 20) {
             $lastName = substr($lastName, 0, 17)."...";
         }
         $i++;
         $osd_message .= sprintf("   %02d  %s - %s", $i, number_format($p_base), $lastName)."\\n";
     }
-    $result->finish;
+    $result2->finish;
     $osd_message .= $position;
 
     return ($ranknumber, $g_games{$player->{game}}->getTotalPlayers(), $osd_message);
@@ -268,7 +268,7 @@ sub get_menu_text
 
     my $weapon_str =  "   No Fav Weapon\\n";
     my $acc_str    =  "   $acc% Accuracy\\n";
-    if ($fav_weapon_kills > 0) {
+    if ($fav_weapon_kills) {
         $weapon_str = "   ".$fav_weapon_kills." kills with ".$fav_weapon."\\n";
         $acc_str    = "   $acc% Accuracy (".$fav_weapon." ".$fav_weapon_acc."%)\\n";
     }
@@ -278,7 +278,7 @@ sub get_menu_text
 
     $s_weapon_str =  "   No Fav Weapon\\n";
     $s_acc_str    =  "   $s_acc% Accuracy\\n";
-    if ($s_fav_weapon_kills > 0) {
+    if ($s_fav_weapon_kills) {
         $s_weapon_str = "   ".$s_fav_weapon_kills." kills with ".$s_fav_weapon."\\n";
         $s_acc_str    = "   $s_acc% Accuracy (".$s_fav_weapon." ".$s_fav_weapon_acc."%)\\n";
     }
@@ -419,7 +419,7 @@ sub doEvent_Connect
 
 sub getColor {
     my ($name, $team) = @_;
-    my $team = $team =~ /^(CT|Blue)$/i ? $g_servers{$s_addr}->{format_A} : $g_servers{$s_addr}->{format_B};
+    $team = $team =~ /^(CT|Blue)$/i ? $g_servers{$s_addr}->{format_A} : $g_servers{$s_addr}->{format_B};
     return !$g_servers{$s_addr}->{format_A} ? $name : $team.$name.$g_servers{$s_addr}->{format_actionend};
 }
 
@@ -443,14 +443,7 @@ sub doEvent_EnterGame
     {
         if ($g_mode eq "Normal" && $isbot == 0 && ($player->{userid} > 0 || $g_servers{$s_addr}->{play_game} == CS2()))
         {
-            #$hostname = resolveIp($player->{address});
-            #$hostgroup = "";
-            #
-            #if ($hostname)
-            #{
-            #    $hostgroup = &getHostGroup($hostname);
-            #}
-            
+
             if ($g_stdin == 0 && $g_servers{$s_addr}->{connect_announce} > 0)
             {
                 my $player_rank = $player->getRank();
@@ -905,7 +898,9 @@ sub doEvent_RoleSelection
 sub doEvent_ChangeName
 {
     my ($playerId, $playerUniqueId, $newname) = @_;
-    
+    $newname =~ s/[\x00-\x1f\x7f]//g;
+    $newname = substr($newname, 0, 252);  # byte cap: varchar(64) utf8mb4 = 256 bytes max; Steam names <= 32 chars = 128 bytes max
+
     my $desc="";
     my $player = lookupPlayer($s_addr, $playerId, $playerUniqueId);
     my $playerstr = getPlayerInfoString($player, $playerId);
@@ -1004,7 +999,6 @@ sub doEvent_Frag
 
     if ( ($g_servers{$s_addr}->{broadcasting_events} == 1) && ($g_servers{$s_addr}->{ignore_bots} == 1) && ((($killer->{is_bot} == 1) && ($victim->{is_bot} == 0)) || (($killer->{is_bot} == 0) && ($victim->{is_bot} == 1))) && !checkBonusRound() ) {
         $desc = "(IGNORED) NOTMINPLAYERS: ";
-        my $msg = "";
         my $k_name = getColor($killer->{name},$killer->{team});
         my $v_name = getColor($victim->{name},$victim->{team});
         my $k_userid  = $g_servers{$s_addr}->format_userid($killer->{"userid"});
@@ -1023,17 +1017,14 @@ sub doEvent_Frag
         }
     }
 
-    if (($g_servers{$s_addr}->{num_trackable_players} < $g_servers{$s_addr}->{minplayers}) && $g_servers{$s_addr}->{play_game} != L4D()) {
+    if (($g_servers{$s_addr}->{num_trackable_players} < $g_servers{$s_addr}->{minplayers})) {
         $desc = "(IGNORED) NOTMINPLAYERS: ";
     } elsif (checkBonusRound()) {
         $desc = "(IGNORED) BonusRound: ";
     } elsif ($killer && $victim) {
         if (($g_servers{$s_addr}->{ignore_bots} == 1) && (($killer->{is_bot} == 1) || ($victim->{is_bot} == 1))) {
             $desc = "(IGNORED) BOT: ";
-        } elsif ($g_servers{$s_addr}->{play_game} == L4D() && $killer->{team} eq "Infected" && $victim->{team} eq "Infected") {
-            $desc = "(IGNORED) L4D Infected TK: ";
         } else {
-        
             # weapon fixes
             if ($weapon eq "") {
                 if ($killer->{role}) {
@@ -1117,7 +1108,6 @@ sub doEvent_Frag
             }
             if (($was_tk==0) || ($g_servers{$s_addr}->{game_type} == 1)) {
                 # Frag
-                
                 if($isfake == 0) {
                     #kill streak code by octo
                     

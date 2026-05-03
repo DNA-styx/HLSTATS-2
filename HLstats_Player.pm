@@ -15,7 +15,7 @@ package HLstats_Player;
 #
 # Constructor
 #
-use Encode qw(decode);
+use Encode qw(decode is_utf8);
 
 do "$::opt_libdir/HLstats_GameConstants.plib";
 
@@ -105,7 +105,7 @@ sub new
     $self->{last_disp_build}     = 0;
     $self->{last_entrance_build} = 0;
     $self->{last_exit_build}     = 0;
-    $self->{last_team_change}    = "";
+    $self->{last_team_change}    = 0;
     $self->{deaths_in_a_row}     = 0;
     $self->{trackable}           = 0;
     $self->{needsupdate}         = 0;
@@ -296,12 +296,10 @@ sub insertPlayer
 {
     my ($self, $playerid) = @_;
 
-    my $srv_addr = $self->{server};
-    my $hideval = 0;
-
-    if ($::g_servers{$srv_addr}->{play_game} == L4D() && $self->{userid} < 0) {
-        $hideval = 1;
-    }
+    my $srv_addr    = $self->{server};
+    my $ignore_bots = $::g_servers{$srv_addr}->{ignore_bots} // 0;
+    my $is_bot      = $self->{is_bot};
+    my $hideranking = ($ignore_bots && $is_bot ? 1 : 0);
 
     if ($playerid) {
         my $sql = q{
@@ -315,7 +313,7 @@ sub insertPlayer
             $self->{clan},
             $::g_servers{$srv_addr}->{game},
             $self->{display_events},
-            $hideval,
+            $hideranking,
             $playerid,
         );
        ::exec_cache($sql,@bind);
@@ -387,8 +385,12 @@ sub insertPlayerLivestats
 #
 sub setName
 {
-    my ($self, $name) = @_;
-    
+    my ($self, $name) = @_; 
+    # Decode to a Perl character string so DBD::mysql doesn't pass invalid UTF-8 to MySQL.
+    $name = decode('UTF-8', $name, Encode::FB_DEFAULT) unless is_utf8($name);
+    $name =~ s/[\x00-\x1f\x7f\x{FFFD}]//g;
+    $name = substr($name, 0, 252);    # byte cap: varchar(64) utf8mb4 = 256 bytes max; Steam names <= 32 chars = 128 bytes max
+
     my $old = $self->{name};
 
     return 2 if $old eq $name;
@@ -450,7 +452,9 @@ sub flushDB {
     my $is_bot         = $self->{is_bot};
 
     # Snapshot frequently used fields
-    my $name          = ($::db_driver eq 'mysql') ? $self->{name} : decode("UTF-8", $self->{name});
+    my $name          = is_utf8($self->{name}) ? $self->{name} : decode('UTF-8', $self->{name}, Encode::FB_DEFAULT);
+    $name =~ s/[\x00-\x1f\x7f]//g;
+    $name = substr($name, 0, 252);    # byte cap: varchar(64) utf8mb4 = 256 bytes max
     my $clan          = $self->{clan} + 0;
     my $kills         = $self->{kills};
     my $deaths        = $self->{deaths};
@@ -842,93 +846,38 @@ sub geoUpdate {
 sub getRank
 {
     my ($self) = @_;
-    
-    my $srv_addr  = $self->{server};
-    $query = "
-        SELECT
-            kills,
-            deaths,
-            hideranking
-        FROM
-            hlstats_Players
-        WHERE
-            playerId=?
-    ";
-    my $result = ::exec_cache("get_player_rank_stats", $query, $self->{playerid});
-        
-    my ($kills, $deaths, $hideranking) = $result->fetchrow_array;
-    $result->finish;
-    
-    return 0 if ($hideranking > 0);
-    
-    $deaths = 1 if ($deaths == 0);
-    my $kpd = $kills/$deaths;
-    
-    my $rank = 0;
-    
-    if ($::g_ranktype ne "kills"){
 
-        if (!defined($self->{skill})) {
-            ::printEvent("ERROR", "Attempted to get rank for uninitialized player \"".$self->{name}."\"",1);
-            return 0;
-        }
-        
-        my $query = "
-            SELECT
-                COUNT(*)
-            FROM
-                hlstats_Players
-            WHERE
-                game=?
-                AND hideranking = 0
-                AND lastAddress <> ''
-                AND kills >= 1
-                AND (
-                        (skill > ?) OR (
-                            (skill = ?) AND ((kills/IF(deaths=0,1,deaths)) > ?)
-                        )
-                )
-        ";
-        my @vals = (
-            $self->{game},
-            $self->{skill},
-            $self->{skill},
-            $kpd
-        );
-        my $rankresult = ::exec_cache("get_player_skill_value", $query, @vals);
-        ($rank) = $rankresult->fetchrow_array;
-        $rankresult->finish;
-        return $rank + 1;
+    my $pid  = $self->{playerid};
+    my $game = $self->{game};
 
+    my ($cache_key, $order_by);
+    if ($::g_ranktype ne "kills") {
+        $cache_key = "rank_skill_window";
+        $order_by  = "skill DESC, kills DESC";
     } else {
-        my $query ="
-            SELECT
-                COUNT(*)
-            FROM
-                hlstats_Players
-            WHERE
-                game=?
-                AND hideranking = 0
-                AND lastAddress <> ''
-                AND (
-                        (kills > ?) OR (
-                            (kills = ?) AND ((kills/IF(deaths=0,1,deaths)) > ?)
-                        )
-                )
-        ";
-        my @vals = (
-            $self->{game},
-            $kills,
-            $kills,
-            $kpd
-        );
-        my $rankresult = ::exec_cache("get_player_rank_value", $query, @vals);
-        ($rank) = $rankresult->fetchrow_array;
-        $rankresult->finish;
-        return $rank + 1;
+        $cache_key = "rank_kills_window";
+        $order_by  = "kills DESC, kills / IF(deaths=0,1,deaths) DESC";
     }
-    ::printEvent("MYSQL", "Got rank for $self->{name} ($self->{playerid})",4);
-    return $rank;
+
+    my $query = "
+        SELECT rank_pos
+        FROM (
+            SELECT
+                playerId,
+                RANK() OVER (ORDER BY $order_by) AS rank_pos
+            FROM hlstats_Players
+            WHERE game = ?
+              AND hideranking = 0
+              AND lastAddress <> ''
+        ) ranked
+        WHERE playerId = ?
+    ";
+
+    my $rankresult = ::exec_cache($cache_key, $query, $game, $pid);
+    my ($rank) = $rankresult->fetchrow_array;
+    $rankresult->finish;
+
+    return $rank // 0;
 }
 
 sub updateTrackable

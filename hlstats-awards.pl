@@ -313,7 +313,7 @@ sub DoInactive
             SET
                 hideranking = 0
             WHERE
-                hideranking <> 2
+                hideranking = 3
                 AND lastAddress <> ''
         ");
     }
@@ -924,6 +924,10 @@ sub DoRibbons {
                 ",$game);
             }
             else {
+                # Co-op games (l4d, l4d2) track all events as V-type awards;
+                # competitive games filter out victim awards.
+                my $type_filter = ($game =~ /^l4d/) ? '' : "AND a.awardType<>'V'";
+
                 # Award ribbons
                 $players_rs = query_now("
                     SELECT pa.playerId
@@ -937,7 +941,7 @@ sub DoRibbons {
                      AND p.lastAddress <> ''
                     WHERE pa.game=?
                       AND a.code=?
-                      AND a.awardType<>'V'
+                      $type_filter
                     GROUP BY pa.playerId
                     HAVING COUNT(pa.playerId) >= $count
                 ",$game,$ribbon->{code});

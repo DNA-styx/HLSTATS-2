@@ -13,7 +13,6 @@ package TRcon;
 #    https://forums.alliedmods.net/forumdisplay.php?f=156
 
 use strict;
-no strict 'vars';
 
 use Sys::Hostname;
 use IO::Socket::INET;
@@ -59,7 +58,7 @@ sub execute
       
     my $answer = $self->sendrecv($command, $splitted_answer);
     if (defined $answer && $answer =~ /bad rcon_password/i) {
-      ::printEvent("RCON", "Bad Password",1);
+      ::printEvent("RCON", "Bad Password",1,"$self->{server_object}->{address}:$self->{server_object}->{port}");
     }
     return $answer;
   }  
@@ -71,15 +70,15 @@ sub get_auth_code
   my $auth = 0;
   
   if ($id == $AUTH_PACKET_ID) {
-    ::printEvent("RCON", "Rcon password accepted",1);
+    ::printEvent("RCON", "Rcon password accepted",1,"$self->{server_object}->{address}:$self->{server_object}->{port}");
     $auth = 1;
     $self->{"auth"} = 1;
   } elsif( $id == -1) {
-    ::printEvent("RCON", "Rcon password refused",1);
+    ::printEvent("RCON", "Rcon password refused",1,"$self->{server_object}->{address}:$self->{server_object}->{port}");
     $self->{"auth"} = 0;
     $auth           = 0;
   } else {
-    ::printEvent("RCON", "Bad password response id=$id",1);
+    ::printEvent("RCON", "Bad password response id=$id",1,"$self->{server_object}->{address}:$self->{server_object}->{port}");
     $self->{"auth"} = 0;
     $auth           = 0;
   }
@@ -130,7 +129,7 @@ sub sendrecv
   if (($r_socket) && ($r_socket->connected() )) {
 
     if ($auth == 0)  {
-      ::printEvent("RCON", "Trying to get rcon access (auth)",1);
+      ::printEvent("RCON", "Trying to get rcon access (auth)",1,"$server_object->{address}:$server_object->{port}");
       if ($self->send_rcon($AUTH_PACKET_ID, $SERVERDATA_AUTH, $server->{rcon}, 1)) {
         ::printEvent("RCON", "Couldn't send password", 1, "$server_object->{address}:$server_object->{port}");
         return;
@@ -214,7 +213,7 @@ sub send_rcon
     return 1 unless defined $data;
 
     if (length($data) > 4096) {
-        ::printEvent("RCON", "Command too long to send!",1);
+        ::printEvent("RCON", "Command too long to send!",1,"$self->{server_object}->{address}:$self->{server_object}->{port}");
         return 1;
     }
 
@@ -260,30 +259,30 @@ sub _read_exact {
 }
 
 sub _recv_one_packet {
-    my ($sock, $timeout) = @_;
+    my ($sock, $timeout, $self) = @_;
 
     my $sel = IO::Select->new($sock);
+
     unless ($sel->can_read($timeout)) {
-        ::printEvent("RCON", "Socket can't read: stalled or crashed", 1);
-        $self->{rcon_err}++;
+        ::printEvent("RCON", "Socket can't read: stalled or crashed", 1, "$self->{server_object}->{address}:$self->{server_object}->{port}");
         return;
     }
 
     my $hdr = _read_exact($sock, 4);
     unless ($hdr) {
-        ::printEvent("RCON", "Failed to read packet header", 1);
+        ::printEvent("RCON", "Failed to read packet header", 1, "$self->{server_object}->{address}:$self->{server_object}->{port}");
         return;
     }
 
     my $len = unpack('V', $hdr);
     if ($len < 10 || $len > 65536) {
-        ::printEvent("RCON", "Invalid packet length: $len", 1);
+        ::printEvent("RCON", "Invalid packet length: $len", 1, "$self->{server_object}->{address}:$self->{server_object}->{port}");
         return;
     }
 
     my $payload = _read_exact($sock, $len);
     unless ($payload) {
-        ::printEvent("RCON", "Failed to read packet payload (len=$len)", 1);
+        ::printEvent("RCON", "Failed to read packet payload (len=$len)", 1,"$self->{server_object}->{address}:$self->{server_object}->{port}");
         return;
     }
 
@@ -317,13 +316,13 @@ sub recieve_rcon
         my $remain = $deadline - time();
         last if $remain <= 0;
 
-        my ($id, $type, $body) = _recv_one_packet($sock, $remain);
+        my ($id, $type, $body) = _recv_one_packet($sock, $remain, $self);
         last unless defined $id;  # EOF/timeout at socket level
 
         # Auth path: allow Source junk packet then real auth response
         if ($packet_id == $AUTH_PACKET_ID) {
             if ($type == $SERVERDATA_RESPONSE_VALUE && $id == $AUTH_PACKET_ID) {
-                ($id, $type, $body) = _recv_one_packet($sock, $remain);
+                ($id, $type, $body) = _recv_one_packet($sock, $remain, $self);
                 return (-1, -1, undef) unless defined $id;
             }
             return ($id, $type, $body // '');
@@ -345,7 +344,7 @@ sub recieve_rcon
     }
 
     # Deadline reached.
-    ::printEvent("RCON", "Timeout: Socket stalled", 1);
+    ::printEvent("RCON", "Timeout: Socket stalled", 1,"$self->{server_object}->{address}:$self->{server_object}->{port}");
     $self->{rcon_err}++ unless $msg;
     return ( ($msg ne '') ? ($packet_id, $SERVERDATA_RESPONSE_VALUE, $msg) : (-1, -1, undef) );
 }
@@ -420,19 +419,32 @@ sub updateSlot
     }
 }
 
+my %l4d_difficulties = (
+    'Easy'       => 1,
+    'Normal'     => 2,
+    'Hard'       => 3,
+    'Impossible' => 4
+);
+
 sub getPlayers
 {
     my ($self,$steamid,$slot_name) = @_;
-   my $game = $self->{server_object}->{play_game} ;
-    my $command = ($game == CS2()) ? "users;status" : ($game == L4D()) ? "z_difficulty;status" : "status";
+    my $game = $self->{server_object}->{play_game};
     my $server = "$self->{server_object}->{address}:$self->{server_object}->{port}";
-    my $status = $self->execute($command, 1);
+    my $status;
+
+    if ($game == CS2()) {
+        my $users = $self->execute("users") // '';
+        my $stat  = $self->execute("status") // '';
+        $status = length($users) ? "$users\n$stat" : $stat;
+    } else {
+        $status = $self->execute("status");
+    }
     return ("", -1, "", 0) unless $status;
 
     my @lines = split(/[\r\n]+/, $status);
     my %players;
     my %userid_to_slot;
-    my $md5;
 
     # HL2 standard
     # userid name uniqueid connected ping loss state adr
@@ -453,10 +465,6 @@ sub getPlayers
         if ($line =~ /^(\d+):(\d+):"([^"]+)"$/) {
             $userid_to_slot{$2} = $1; 
             next;
-        }
-        # L4D difficulty
-        elsif ($line =~ /^\s*"z_difficulty"\s*=\s*"([A-Za-z]+)".*$/x)  {
-            $players{"host"}{"difficulty"} = exists($l4d_difficulties{$1}) ? $l4d_difficulties{$1} : 0;
         }
         # 'status'
         elsif ($line =~ /^\s*hostname\s*:\s*([\S].*)$/) {
@@ -483,10 +491,10 @@ sub getPlayers
             /x)
         {
             my ($userid, $name) = ($1, $2);
-            $md5 = Digest::MD5->new;
+            my $md5 = Digest::MD5->new;
             $md5->add($name);
             $md5->add($server);
-            $uniqueid = "BOT:" . $md5->hexdigest;
+            my $uniqueid = "BOT:" . $md5->hexdigest;
             my $key = $uniqueid;
             next unless $key;
 
@@ -539,16 +547,19 @@ sub getPlayers
         {
   
             my ($userid, $time, $ping, $address, $name) = ($1, $2, $3, $4 // "", $6);
+            my $uniqueid;
             if ($time =~ /^BOT/) {
-                $md5 = Digest::MD5->new;
+                my $md5 = Digest::MD5->new;
                 $md5->add($name);
                 $md5->add($server);
                 $uniqueid = "BOT:" . $md5->hexdigest;
             }
             my $slot = defined($userid_to_slot{$userid}) ? $userid_to_slot{$userid} : $userid;
-            my $uniqueid = $self->find_steamid($userid, $slot);
+            if (!defined $uniqueid) {
+                $uniqueid = $self->find_steamid($userid, $slot);
+            }
             if (!defined $uniqueid && defined $steamid && defined $slot_name && $slot_name eq $slot."/".$name) {
-                $uniqueid = $steamid; # new player cs2
+                $uniqueid = $steamid;
             }
             my $key = ($::g_mode eq "NameTrack") ? $name : ($::g_mode eq "LAN" && $address) ? "$address/$userid/$name" : $uniqueid;
             next unless $key;
@@ -574,11 +585,11 @@ sub getPlayers
 sub getServerData
 {
   my ($self) = @_;
-
-  my $status = $self->execute("status", 1);
-  return ("", "", 0, 0) unless $status;
   my $server_object = $self->{server_object};
-  my $game = $server_object->{play_game};  
+  my $game = $server_object->{play_game};
+
+  my $status = $self->execute("status");
+  return ("", "", 0, 0) unless $status;
 
   my @lines = split(/[\r\n]+/, $status);
 
@@ -614,6 +625,7 @@ sub getServerData
   if ($game == L4D()) {
       $difficulty = $self->getDifficulty();
   }
+
   return ($servhostname, $map, $max_players, $difficulty);
 }
 
@@ -621,7 +633,7 @@ sub getServerData
 sub getVisiblePlayers
 {
   my ($self) = @_;
-  my $status = $self->execute("sv_visiblemaxplayers");
+  my $status = $self->execute("sv_visiblemaxplayers") // '';
   
   my @lines = split(/[\r\n]+/, $status);
   
@@ -638,13 +650,6 @@ sub getVisiblePlayers
   return ($max_players);
 }
 
-my %l4d_difficulties = (
-    'Easy'       => 1,
-    'Normal'     => 2,
-    'Hard'       => 3,
-    'Impossible' => 4
-);
-
 sub getDifficulty
 {
     #z_difficulty
@@ -653,7 +658,7 @@ sub getDifficulty
     # - Difficulty of the current game (Easy, Normal, Hard, Impossible)
     
   my ($self) = @_;
-  my $zdifficulty = $self->execute("z_difficulty");
+  my $zdifficulty = $self->execute("z_difficulty") // '';
     
   my @lines = split(/[\r\n]+/, $zdifficulty);
   

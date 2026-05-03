@@ -13,7 +13,6 @@
 #    https://forums.alliedmods.net/forumdisplay.php?f=156
 
 use strict;
-no strict 'vars';
 
 $SIG{HUP} = 'HUP_handler';  # unix/linux
 $SIG{INT} = 'INT_handler';  # unix / linux / windows
@@ -23,11 +22,11 @@ $SIG{INT} = 'INT_handler';  # unix / linux / windows
 ##
 
 # $opt_configfile - Absolute path and filename of configuration file.
-$opt_configfile = "./hlstats.conf";
+our $opt_configfile = "./hlstats.conf";
 
 # $opt_libdir - Directory to look in for local required files
 #               (our *.plib, *.pm files).
-$opt_libdir = "./";
+our $opt_libdir = "./";
 
 
 ##
@@ -63,6 +62,32 @@ Getopt::Long::Configure ("bundling");
 binmode(STDOUT, ":utf8");
 binmode(STDIN, ":utf8");
 
+our $s_addr = '';
+
+our ($opt_help, $opt_version);
+our ($db_host, $db_user, $db_pass, $db_name, $db_driver);
+our ($path_perl, $path_awards, $path_bans);
+our ($s_ip, $s_port);
+our $dbh;
+our $g_version;
+our ($g_mailto, $g_mailpath, $g_mode, $g_deletedays, $g_requiremap);
+our ($g_debug, $g_nodebug, $g_rcon, $g_rcon_ignoreself, $g_rcon_record);
+our ($g_stdin, $g_server_ip, $g_server_port, $g_timestamp, $g_cpanelhack);
+our ($g_event_queue_size, $g_dns_resolveip, $g_dns_timeout);
+our ($g_skill_maxchange, $g_skill_minchange, $g_skill_ratio_cap);
+our ($g_geoip_binary, $g_player_minkills, $g_onlyconfig_servers, $g_track_stats_trend);
+our ($g_global_banning, $g_log_chat, $g_log_chat_admins, $g_global_chat);
+our ($g_ranktype, $g_gi);
+our (%g_servers, %g_games, %g_config_servers, %g_eventTables);
+our (%g_preconnect, %g_lan_noplayerinfo);
+our ($ev_unixtime, $ev_daemontime, $ev_remotetime);
+our ($ev_month, $ev_day, $ev_year, $ev_hour, $ev_min, $ev_sec, $ev_time, $ev_timestamp);
+our %ev_properties_hash;
+our ($import_logs_count, $start_time, $start_parse_time);
+our $udp_socket;
+our ($usage, %copts, %directives_mysql, %dysweaponcodes);
+our ($proxy_key, $rproxy_key, $proxy_s_peerhost, $proxy_s_peerport);
+
 ##
 ## Functions
 ##
@@ -74,6 +99,7 @@ my $bans_today   = '';
 sub lookupPlayer
 {
     my ($saddr, $id, $uniqueid) = @_;
+    return undef unless defined $id && defined $uniqueid;
     if (defined($g_servers{$saddr}->{"srv_players"}->{"$id/$uniqueid"}))
     {
         return $g_servers{$saddr}->{"srv_players"}->{"$id/$uniqueid"};
@@ -226,15 +252,13 @@ sub send_global_chat
 my %g_eventtable_data = ();
 
 sub buildEventInsertData {
-    my $insertType = "";
-    $insertType = " DELAYED" if ($db_lowpriority);
 
     while ( my ($table, $colsref) = each(%g_eventTables) ) {
         $g_eventtable_data{$table}{queue}      = [];
         $g_eventtable_data{$table}{nullallowed}= 0;
         $g_eventtable_data{$table}{lastflush}  = $ev_daemontime;
 
-        my $prefix = "INSERT $insertType INTO hlstats_Events_$table\n"
+        my $prefix = "INSERT INTO hlstats_Events_$table\n"
                    . "(\n    eventTime,\n    serverId,\n    map";
 
         my $j = 0;
@@ -419,11 +443,11 @@ sub calcL4DSkill
     
     # Calculate the new skills
     
-    $diffweight=0.5;
+    my $diffweight = 0.5;
     if ($difficulty > 0) {
             $diffweight = $difficulty / 2;
-    }    
-    
+    }
+    my $pointvalue = 5 * $modifier;
     my $killerSkillChange = $pointvalue * $diffweight;
 
     if ($killerSkillChange > $g_skill_maxchange) {
@@ -450,17 +474,17 @@ sub calcL4DSkill
 sub rewardTeam
 {
     my ($team, $reward, $actionid, $actionname, $actioncode) = @_;
-    $rcmd = $g_servers{$s_addr}->{broadcasting_command};
+    my $rcmd = $g_servers{$s_addr}->{broadcasting_command};
     
     my $player;
     
     printEvent("REWARD", "Rewarding team \"$team\" with \"$reward\" skill for action \"$actionid\" ...",3);
     my @userlist;
-    foreach $player (values(%{$g_servers{$s_addr}->{"srv_players"}})) {
+    foreach my $player (values(%{$g_servers{$s_addr}->{"srv_players"}})) {
         my $player_team      = $player->{team};
         my $player_timestamp = $player->{timestamp};
         if (($g_servers{$s_addr}->{ignore_bots} == 1) && ($player->{is_bot} == 1)) {
-            $desc = "(IGNORED) BOT: ";
+            my $desc = "(IGNORED) BOT: ";
         } else {
             if ($player_team eq $team) {
                 printEvent("REWARD", $player->getInfoString() . " with \"$reward\" skill for action \"$actionid\"",3);
@@ -525,7 +549,7 @@ sub updatePlayerProfile
     unless ($player) {
         return 0;
     }
-    $rcmd = $g_servers{$s_addr}->{player_command};
+    my $rcmd = $g_servers{$s_addr}->{player_command};
     $value = "" if ($value eq "none" || $value eq " ");
 
     my $playerName = abbreviate($player->{name});
@@ -536,7 +560,7 @@ sub updatePlayerProfile
     if ($g_servers{$s_addr}->{player_events} == 1) {
         my $p_userid  = $g_servers{$s_addr}->format_userid($player->{userid});
         my $p_is_bot  = $player->{is_bot};
-        $cmd_str = $rcmd." $p_userid ".$g_servers{$s_addr}->quoteparam("SET command successful for '$playerName'.");
+        my $cmd_str = $rcmd." $p_userid ".$g_servers{$s_addr}->quoteparam("SET command successful for '$playerName'.");
         $g_servers{$s_addr}->dorcon($cmd_str);
     }
     return 1;
@@ -698,7 +722,7 @@ sub queryServer {
 
         if (length($ans) eq 9 && substr($ans, 4, 1) eq "\x41") {
             # Counter-Strike 2 responds with challenge if client is non-local
-            $challenge = substr($ans, 5, 4);
+            my $challenge = substr($ans, 5, 4);
             my $msg = "\xFF\xFF\xFF\xFFTSource Engine Query\x00" . $challenge;
             unless(defined(send($socket, $msg, 0, sockaddr_in($iport, $iaddr)))) {
                  warn("queryServer: send $iaddr:$iport : $!") if $::g_debug > 0;
@@ -903,7 +927,7 @@ sub getPlayerInfoString
     if ($player) {
         return $player->getInfoString();
     } else {
-        return "(" . join(",", @ident) . ")";
+        return "(" . join(",", map { defined $_ ? $_ : "" } @ident) . ")";
     }
 }
 
@@ -921,19 +945,21 @@ sub getPlayerInfo
 
     if ($player =~ /^(.*?)<(\d+)><([^<>]*)><([^<>]*)>(?:<([^<>]*)>)?.*$/) {
         my $name        = $1;
+        $name =~ s/[\x00-\x1f\x7f]//g;  # strip control characters
+        $name = substr($name, 0, 252);    # byte cap: varchar(64) utf8mb4 = 256 bytes max; Steam names <= 32 chars = 128 bytes max
         my $slot_or_id  = $2;
         my $uniqueid    = $3;
         my $team        = $4;
         my $role        = $5 // "";
         my $bot         = 0;
         my $haveplayer  = 0;
-        $plainuniqueid = $uniqueid;
+        my $plainuniqueid = $uniqueid;
         $uniqueid =~ s!\[U:1:(\d+)\]!'STEAM_0:'.($1 % 2).':'.int($1 / 2)!eg;
         $uniqueid =~ s/^STEAM_[0-9]+?\://;
         # --- CS2 competitive-specific handling --- #
         if ($g_servers{$s_addr}->{play_game} ==  CS2()) {
             if (botidcheck($uniqueid)) {
-               $md5 = Digest::MD5->new;
+               my $md5 = Digest::MD5->new;
                $md5->add($name);
                $md5->add($s_addr);
                $uniqueid = "BOT:" . $md5->hexdigest;
@@ -1043,7 +1069,7 @@ sub getPlayerInfo
         } else {
             if ($g_mode eq "LAN" && !$bot && ($userid > 0  || $g_servers{$s_addr}->{play_game} == CS2())) {
                 if ($ipAddr) {
-                    $g_lan_noplayerinfo->{"$s_addr/$userid/$name"} = {
+                    $g_lan_noplayerinfo{"$s_addr/$userid/$name"} = {
                         ipaddress => $ipAddr,
                         userid => $userid,
                         name => $name,
@@ -1078,11 +1104,11 @@ sub getPlayerInfo
             } else {
                 # Normal (steamid) mode player and bot, as well as lan mode bots
                 if ($bot) {
-                    $md5 = Digest::MD5->new;
+                    my $md5 = Digest::MD5->new;
                     $md5->add($name);
                     $md5->add($s_addr);
                     $uniqueid = "BOT:" . $md5->hexdigest;
-                    $unique_id = $uniqueid if ($g_mode eq "LAN");
+                    my $unique_id = $uniqueid if ($g_mode eq "LAN");
                 }
             
                 if ($uniqueid eq "UNKNOWN"
@@ -1151,8 +1177,8 @@ sub getPlayerInfo
             if ($userid != 0 || $g_servers{$s_addr}->{play_game} == CS2()) {
                 if ($create_player > 0) {
                     my $preIpAddr = "";
-                    if ($g_preconnect->{"$s_addr/$userid/$name"}) {
-                        $preIpAddr = $g_preconnect->{"$s_addr/$userid/$name"}->{"ipaddress"};
+                    if ($g_preconnect{"$s_addr/$userid/$name"}) {
+                        $preIpAddr = $g_preconnect{"$s_addr/$userid/$name"}{"ipaddress"};
                     }
                     # Add the player to our hash of player objects
                     $g_servers{$s_addr}->{"srv_players"}->{"$userid/$uniqueid"} = HLstats_Player->new(
@@ -1166,13 +1192,13 @@ sub getPlayerInfo
                         team => $team,
                         role => $role,
                         is_bot => $bot,
-                        display_events => $g_servers{$s_addr}->{default_display_events},
+                        display_events => 1,
                         address => (($preIpAddr ne "") ? $preIpAddr : $ipAddr // '')
                     );
                     if ($preIpAddr ne "") {
                         printEvent("SERVER", "LATE CONNECT [$name/$userid] - steam userid validated",3);
                         doEvent_Connect($userid, $uniqueid, $preIpAddr);
-                        delete($g_preconnect->{"$s_addr/$userid/$name"});
+                        delete($g_preconnect{"$s_addr/$userid/$name"});
                     }
                     # Increment number of players on server
                     $g_servers{$s_addr}->updatePlayerCount();
@@ -1215,7 +1241,7 @@ sub getPlayerInfo
         my $bot      = 0;
         
         if (botidcheck($uniqueid)) {
-            $md5 = Digest::MD5->new;
+            my $md5 = Digest::MD5->new;
             $md5->add($ev_daemontime);
             $md5->add($s_addr);
             $uniqueid = "BOT:" . $md5->hexdigest;
@@ -1230,7 +1256,7 @@ sub getPlayerInfo
         my $uniqueid = $1;
         my $bot      = 0;
         if (botidcheck($uniqueid)) {
-            $md5 = Digest::MD5->new;
+            my $md5 = Digest::MD5->new;
             $md5->add($ev_daemontime);
             $md5->add($s_addr);
             $uniqueid = "BOT:" . $md5->hexdigest;
@@ -1381,7 +1407,7 @@ sub readDatabaseConfig()
     # hlxce: read the global settings from the database!
     my $gsettings = query_now("SELECT keyname,value FROM hlstats_Options WHERE opttype <= 1");
     while ( my($p,$v) = $gsettings->fetchrow_array) {
-        $tmp = "\$".$directives_mysql{$p}." = '$v'";
+        my $tmp = "\$".$directives_mysql{$p}." = '$v'";
         eval $tmp;
     }
     $gsettings->finish;
@@ -1514,7 +1540,7 @@ sub handleIncoming
     # Inject into HLstatsZ
     my ($address, $port);
     my @data = split ";", $s_output;
-    $cmd = $data[0];
+    my $cmd = $data[0];
 
     if ($cmd eq "C" && ($s_peerhost eq "127.0.0.1" || (($proxy_key eq $rproxy_key) && $proxy_key ne ""))) {
         printEvent("CONTROL", "Command received: ".$data[1], 1);
@@ -1532,23 +1558,23 @@ sub handleIncoming
 
         if ($data[1] eq "UDP") {
             my $dest = sockaddr_in($port, inet_aton($address));
-            $msg="Replying back to Frontend...OK";
-            send($::udp_socket, $msg, 0, $dest); #reply to front end          
+            my $msg = "Replying back to Frontend...OK";
+            send($::udp_socket, $msg, 0, $dest); #reply to front end
         }
 
         if ($data[1] eq "RELOAD") {
             printEvent("CONTROL", "Re-Reading Configuration by request from Frontend...", 1);
             reloadConfiguration();
             my $dest = sockaddr_in($port, inet_aton($address));
-            $msg="Re-Reading Configuration by request from Frontend...OK";
-            send($::udp_socket, $msg, 0, $dest); #reply to front end          
-        } 
+            my $msg = "Re-Reading Configuration by request from Frontend...OK";
+            send($::udp_socket, $msg, 0, $dest); #reply to front end
+        }
 
         if ($data[1] eq "KILL") {
             printEvent("CONTROL", "SHUTTING DOWN SCRIPT", 1);
             flushAll();
             my $dest = sockaddr_in($port, inet_aton($address));
-            $msg="Shutting down HLstatsZ Daemon...Goodbye...";
+            my $msg = "Shutting down HLstatsZ Daemon...Goodbye...";
             send($::udp_socket, $msg, 0, $dest); #reply to front end       
             exit(0);
         }
@@ -1834,6 +1860,12 @@ sub handleIncoming
     my $ev_properties = "";
     my %ev_properties = ();
     my %ev_player = ();
+    my ($ev_Xcoord, $ev_Ycoord, $ev_Zcoord);
+    my ($ev_XcoordKV, $ev_YcoordKV, $ev_ZcoordKV);
+    my ($ev_l4dXcoord, $ev_l4dYcoord, $ev_l4dZcoord);
+    my ($ev_l4dXcoordKV, $ev_l4dYcoordKV, $ev_l4dZcoordKV);
+    my ($ev_l4dXcoordV, $ev_l4dYcoordV, $ev_l4dZcoordV);
+    my $headshot = 0;
 
     # pvkii parrot log lines also fit the death line parsing
     if ($g_servers{$s_addr}->{play_game} == PVKII()
@@ -1984,14 +2016,14 @@ sub handleIncoming
         \(INCAP\)        # l4d prefix, such as (DEATH) or (INCAP)
         "(.+?(?:<.+?>)*?
         <setpos_exact\s(-?\d+?\.\d\d)\s(-?\d+?\.\d\d)\s(-?\d+?\.\d\d);[^"]*
-        )"                        # player string with or without l4d-style location coords
-        \swas\sincapped\sby\s            # verb (ex. attacked, killed, triggered)
+        )"                           # player string with or without l4d-style location coords
+        \swas\sincapped\sby\s        # verb (ex. attacked, killed, triggered)
         "(.+?(?:<.+?>)*?
         <setpos_exact\s(-?\d+?\.\d\d)\s(-?\d+?\.\d\d)\s(-?\d+?\.\d\d);[^"]*
-        )"                        # player string as above or action name
-        \swith\s                # (ex. with, against)
-        "([^"]*)"                    # weapon name
-        (.*)                    #properties
+        )"                          # player string as above or action name
+        \swith\s                    # (ex. with, against)
+        "([^"]*)"                   # weapon name
+        (.*)                        #properties
         /x){
        #  800. L4D Incapacitation
 
@@ -2054,13 +2086,13 @@ sub handleIncoming
         $ev_l4dXcoord = $2;
         $ev_l4dYcoord = $3;
         $ev_l4dZcoord = $4;
-        $ev_victim = $5;
+        my $ev_victim = $5;
         $ev_l4dXcoordV = $6;
         $ev_l4dYcoordV = $7;
         $ev_l4dZcoordV = $8;
 
-        $playerinfo = getPlayerInfo($ev_player, 1);
-        $victiminfo = getPlayerInfo($ev_victim, 1);
+        my $playerinfo = getPlayerInfo($ev_player, 1);
+        my $victiminfo = getPlayerInfo($ev_victim, 1);
 
         $ev_type = 11;
 
@@ -2089,14 +2121,14 @@ sub handleIncoming
     } elsif ($s_output =~ /^
         "(.+?(?:<.+?>)*?
         )"                        # player string
-        \s(triggered(?:\sa)?)\s            # verb (ex. attacked, killed, triggered)
+        \s(triggered(?:\sa)?)\s   # verb (ex. attacked, killed, triggered)
         "(.+?(?:<.+?>)*?
         )"                        # player string as above or action name
-        \s[a-zA-Z]+\s                # (ex. with, against)
+        \s[a-zA-Z]+\s             # (ex. with, against)
         "(.+?(?:<.+?>)*?
         )"                        # player string as above or weapon name
-        (?:\s[a-zA-Z]+\s"(.+?)")?    # weapon name on plyrplyr actions
-        (.*)                    #properties
+        (?:\s[a-zA-Z]+\s"(.+?)")? # weapon name on plyrplyr actions
+        (.*)                      #properties
         /x)
     {
 
@@ -2290,7 +2322,7 @@ sub handleIncoming
     } elsif ($s_output =~ /^"(.+?(?:<.+?>)*?)" triggered "clantag" \(value "(.+?)?"\)$/) {
         # L 08/14/2014 - 18:04:21: "Laam4<7><STEAM_1:0:106564><Unassigned>" triggered "clantag" (value "Kunіngas")
         $ev_player = $1;
-        $ev_clantag = $2;
+        my $ev_clantag = $2;
 
         if ($ev_clantag) {
             my $playerinfo = getPlayerInfo($ev_player, 1);
@@ -2308,7 +2340,7 @@ sub handleIncoming
     } elsif ($s_output =~ /^"(.+?(?:<.+?>)*?)" api_request "playerinfo" \(value "(.+?)?"\)$/) {
 
         $ev_player = $1;
-        $ev_queryId = $2;
+        my $ev_queryId = $2;
 
         if ($ev_queryId) {
             my $playerinfo = getPlayerInfo($ev_player, 1);
@@ -2378,7 +2410,7 @@ sub handleIncoming
                         my $p_name   = $playerinfo->{"name"};
                         my $p_userid = $playerinfo->{"userid"};
                         printEvent("SERVER", "LATE CONNECT [$p_name/$p_userid] - STEAM_ID_PENDING",3);
-                        $g_preconnect->{"$s_addr/$p_userid/$p_name"} = {
+                        $g_preconnect{"$s_addr/$p_userid/$p_name"} = {
                             ipaddress => $ipAddr,
                             name => $p_name,
                             server => $s_addr,
@@ -2448,6 +2480,7 @@ sub handleIncoming
 
             # in cs:s players dropp the bomb if they are the only ts
             # and disconnect...the dropp the bomb after they disconnected :/
+            my $playerinfo;
             if ($ev_obj_a eq "Dropped_The_Bomb") {
               $playerinfo = getPlayerInfo($ev_player, 0);
             } else {
@@ -2531,7 +2564,7 @@ sub handleIncoming
     } elsif ($s_output =~ /^(?:Kick: )?"(.+?(?:<.+?>)*)" ([^\(]+)(.*)$/) {
         # Prototype: "player" verb[properties]
         # Matches:
-        #     1. Connection (CS:GO only)
+        #  1. Connection (CS:GO only)
         #  2. Enter Game
         #  3. Disconnection
 
@@ -2552,8 +2585,8 @@ sub handleIncoming
             if ($playerinfo) {
                 $ev_type = 3;
 
-                $userid   = $playerinfo->{userid};
-                $uniqueid = $playerinfo->{uniqueid};
+                my $userid   = $playerinfo->{userid};
+                my $uniqueid = $playerinfo->{uniqueid};
 
                 $ev_status = doEvent_Disconnect(
                     $playerinfo->{userid},
@@ -2612,10 +2645,10 @@ sub handleIncoming
         %ev_properties_hash = getProperties($ev_properties);
 
         if ($ev_obj_a eq "pointcaptured") {
-            $numcappers = $ev_properties_hash{numcappers};
-            foreach ($i = 1; $i <= $numcappers; $i++) {
+            my $numcappers = $ev_properties_hash{numcappers};
+            for (my $i = 1; $i <= $numcappers; $i++) {
                 # reward each player involved in capturing
-                $player = $ev_properties_hash{"player".$i};
+                my $player = $ev_properties_hash{"player".$i};
                 #$position = $ev_properties_hash{"position".$i};
                 my $playerinfo = getPlayerInfo($player, 1);
                 if ($playerinfo) {
@@ -2633,8 +2666,8 @@ sub handleIncoming
         }
         if ($ev_obj_a eq "captured_loc") {
         #    $flag_name = $ev_properties_hash{flagname};
-            $player_a  = $ev_properties_hash{player_a};
-            $player_b  = $ev_properties_hash{player_b};
+            my $player_a = $ev_properties_hash{player_a};
+            my $player_b = $ev_properties_hash{player_b};
 
             my $playerinfo_a = getPlayerInfo($player_a, 1);
             if ($playerinfo_a) {
@@ -2688,7 +2721,7 @@ sub handleIncoming
         $ev_obj_a  = $2; # password
         $ev_obj_b  = $3; # command
         $ev_obj_c  = $4; # ip
-        $ev_obj_d  = $5; # port
+        my $ev_obj_d = $5; # port
         $ev_properties = $6;
         %ev_properties = getProperties($ev_properties);
         if ($g_rcon_ignoreself == 0 || $ev_obj_c ne $s_ip) {
@@ -2720,11 +2753,11 @@ sub handleIncoming
         $ev_obj_a  = $1; # ip
         $ev_obj_b  = $2; # port
         $ev_obj_c  = $3 // ''; # command
-        $ev_isbad  = $4 // ''; # if bad, "Bad"
+        my $ev_isbad = $4 // ''; # if bad, "Bad"
         if ($ev_obj_c && ($g_rcon_ignoreself == 0 || $ev_obj_a ne $s_ip)) {
             if ($ev_isbad ne "Bad") {
                 $ev_type = 20;
-                @cmds = split(/;/,$ev_obj_c);
+                my @cmds = split(/;/,$ev_obj_c);
                 foreach(@cmds)
                 {
                     $ev_status = doEvent_Rcon(
@@ -2869,7 +2902,7 @@ sub handleIncoming
 
             my $weapcode = $dysweaponcodes{$weapon};
 
-            foreach $player (values(%{$g_servers{$s_addr}->{"srv_players"}})) {
+            foreach my $player (values(%{$g_servers{$s_addr}->{"srv_players"}})) {
                 if ($player->{uniqueid} eq $steamid) {
                     $ev_status = doEvent_Statsme(
                         $player->{"userid"},
@@ -2894,7 +2927,7 @@ sub handleIncoming
             my $role = $2;
             $ev_type = 6;
 
-            foreach $player (values(%{$g_servers{$s_addr}->{"srv_players"}})) {
+            foreach my $player (values(%{$g_servers{$s_addr}->{"srv_players"}})) {
                 if ($player->{uniqueid} eq $steamid) {
                     $ev_status = doEvent_RoleSelection(
                         $player->{"userid"},
@@ -2908,10 +2941,9 @@ sub handleIncoming
             # Prototype: objective { steam_id: 'STEAMID', class: X, team: X, objective: 'TEXT', time: X }
             # Matches:
             # 11. Player Action (Dystopia Objectives)
-            
             my $steamid = $1;
             my $action = $2;
-            foreach $player (values(%{$g_servers{$s_addr}->{"srv_players"}})) {
+            foreach my $player (values(%{$g_servers{$s_addr}->{"srv_players"}})) {
                 if ($player->{uniqueid} eq $steamid) {
                     $ev_status = doEvent_PlayerAction(
                         $player->{"userid"},
@@ -2959,7 +2991,7 @@ EOT
         # Banid: huaaa<1804><STEAM_0:1:10769><>" was kicked and banned "permanently" by "Console"
 
         $ev_player  = $1;
-        $ev_bantime = $2;
+        my $ev_bantime = $2;
         my $playerinfo = getPlayerInfo($ev_player, 1);
 
         if ($ev_bantime eq "5") {
@@ -2970,7 +3002,7 @@ EOT
                 printEvent("BAN", "Global Ban - ignored",2);
             } elsif (!$g_servers{$s_addr}->{ignore_nextban}->{$playerinfo->{"uniqueid"}}) {
                 my $p_steamid  = $playerinfo->{"uniqueid"};
-                my $player_obj = lookupPlayer($s_addr, $playerId, $p_steamid);
+                my $player_obj = lookupPlayer($s_addr, $playerinfo->{"userid"}, $p_steamid);
                 printEvent("BAN", "Steamid: ".$p_steamid,2);
 
                 if ($player_obj) {
@@ -3059,28 +3091,40 @@ sub handleData
             # Clean up
             my %players_temp   = %{ $g_servers{$server}->{"srv_players"} };
             if (%players_temp) {
-                my %status_players = $g_servers{$server}->rcon_getplayers();
-                if ( defined $status_players{"host"}->{"name"} || $g_servers{$server}->{rcon_obj}->{rcon_err} >= 3 ) {
-                    # remove idling players
-                    while (my ($pl, $player) = each %players_temp) {
-                        my $userid    = $player->{userid};
-                        my $uniqueid  = $player->{uniqueid};
-                        my $key       = ($::g_mode eq "NameTrack") ? $player->{name} : ($::g_mode eq "LAN") ? $server : $uniqueid;
-                        if (!defined($status_players{$key})) {
-                            printEvent("PLAYER", "Auto-disconnecting " . $player->{name} ." for idling (" . ($ev_daemontime - $player->{timestamp}) . " sec)",3);
-                            removePlayer($server, $userid, $uniqueid);
-                        } elsif ( !$player->{is_bot} ) {
-                            $player->{ping} = $status_players{$key}->{Ping} if ($status_players{$key}->{Ping} > 0);
-                            if ( $status_players{$key}->{Address} && $player->{address} ne $status_players{$key}->{Address} ) {
-                                $player->{address} = $status_players{$key}->{Address};
-                                $player->geoLookup();
-                                $player->flushDB();
+                my $_check=1;
+                while (my ($pl, $player) = each %players_temp) {
+                    if ( ($ev_daemontime - $player->{timestamp}) < 30 ) {
+                        $_check=0; #active player: no rcon
+                        last;
+                    }
+                }
+                if ($_check) {
+                    my %status_players = $g_servers{$server}->rcon_getplayers();
+                    if ( defined $status_players{"host"}->{"name"} || $g_servers{$server}->{rcon_obj}->{rcon_err} >= 3 ) {
+                        # remove idling players
+                        while (my ($pl, $player) = each %players_temp) {
+                            my $userid    = $player->{userid};
+                            my $uniqueid  = $player->{uniqueid};
+                            my $key       = ($::g_mode eq "NameTrack") ? $player->{name} : ($::g_mode eq "LAN") ? $server : $uniqueid;
+                            if (!defined($status_players{$key})) {
+                                printEvent("PLAYER", "Auto-disconnecting " . $player->{name} ." for idling (" . ($ev_daemontime - $player->{timestamp}) . " sec)",3);
+                                removePlayer($server, $userid, $uniqueid);
+                            } elsif ( !$player->{is_bot} ) {
+                                $player->{ping} = $status_players{$key}->{Ping} if ($status_players{$key}->{Ping} > 0);
+                                if ( $status_players{$key}->{Address} && $player->{address} ne $status_players{$key}->{Address} ) {
+                                    $player->{address} = $status_players{$key}->{Address};
+                                    $player->geoLookup();
+                                    $player->flushDB();
+                                }
                             }
                         }
+                        # update map/hostname
+                        $g_servers{$server}->get_map($status_players{"host"}) if $status_players{"host"}->{"map"};
                     }
-                    # update map/hostname
-                    $g_servers{$server}->get_map($status_players{"host"}) if $status_players{"host"}->{"map"};
+                } elsif (!$g_servers{$server}->{map}) {
+                    $g_servers{$server}->get_map();
                 }
+
             # Server is offline
             } elsif ($g_servers{$server}->{rcon_obj}->{rcon_err} >= 3 && $g_servers{$server}->{last_event}+599 < $ev_daemontime) {
                 ::printEvent("GAME", "Offline: Now destroying socket and deleting game object for $g_servers{$server}->{game}",1, $server);
@@ -3183,7 +3227,6 @@ $db_user = "";
 $db_pass = "";
 $db_name = "hlstats";
 $db_driver = "mysql";
-$db_lowpriority = 1;
 $path_perl = "";
 $path_awards = "";
 $path_bans = "";
@@ -3206,7 +3249,7 @@ $g_server_ip = "";
 $g_server_port = 27015;
 $g_timestamp = 0;
 $g_cpanelhack = 0;
-$g_event_queue_size = 10;
+$g_event_queue_size = 50;
 $g_dns_resolveip = 1;
 $g_dns_timeout = 5;
 $g_skill_maxchange = 100;
@@ -3227,7 +3270,7 @@ $g_gi = undef;
 $ev_unixtime = time();
 $ev_daemontime = $ev_unixtime;
 
-my %dysweaponcodes = (
+%dysweaponcodes = (
     "1" => "Light Katana",
     "2" => "Medium Katana",
     "3" => "Fatman Fist",
@@ -3307,6 +3350,8 @@ EOT
 %g_config_servers = ();
 
 # Read Config File
+my $conf;
+my %directives;
 if ($opt_configfile && -r $opt_configfile) {
     $conf = ConfigReaderSimple->new($opt_configfile);
     $conf->parse();
@@ -3316,7 +3361,6 @@ if ($opt_configfile && -r $opt_configfile) {
         "DBPassword",            "db_pass",
         "DBName",                "db_name",
         "DBDriver",              "db_driver",
-        "DBLowPriority",         "db_lowpriority",
         "BindIP",                "s_ip",
         "Port",                  "s_port",
         "DebugLevel",            "g_debug",
@@ -3393,6 +3437,7 @@ GetOptions(
 ) or die($usage);
 
 
+my $configfile = $copts{configfile};
 if ($configfile && -r $configfile) {
     $conf = '';
     $conf = ConfigReaderSimple->new($configfile);
@@ -3402,6 +3447,7 @@ if ($configfile && -r $configfile) {
 
 # these are set above, we then reload them to override values in the actual config
 setOptionsConf(%copts);
+$g_event_queue_size = 50 if $g_event_queue_size < 50;
 
 if ($g_cpanelhack) {
     my $home_dir = $ENV{ HOME };
@@ -3451,9 +3497,9 @@ if ($opt_version) {
     print "\nhlstats.pl (HLstatsZ) Version $g_version\n"
         . "Real-time player and clan rankings and statistics for Half-Life 2\n"
         . "Modified (C) 2025 SnipeZilla.com\n"
-        . "Modified (C) 2008-20XX  Nicholas Hastings (nshastings@gmail.com)\n"
+        . "Modified (C) 2008-20XX  Nicholas Hastings (nshastings\@gmail.com)\n"
         . "Copyleft (L) 2007-2008  Malte Bayer\n"
-        . "Modified (C) 2005-2007  Tobias Oetzel (Tobi@hlstatsx.com)\n"
+        . "Modified (C) 2005-2007  Tobias Oetzel (Tobi\@hlstatsx.com)\n"
         . "Original (C) 2001 by Simon Garner \n\n";
     
     print "Using ConfigReaderSimple module version $ConfigReaderSimple::VERSION\n";
@@ -3487,8 +3533,8 @@ if ($g_stdin) {
         exit(255);
     } else {
         printEvent("UDP", "All data from STDIN will be allocated to server '$g_server_ip:$g_server_port'.", 1);
-        $s_peerhost = $g_server_ip;
-        $s_peerport = $g_server_port;
+        my $s_peerhost = $g_server_ip;
+        my $s_peerport = $g_server_port;
         $s_addr = "$s_peerhost:$s_peerport";
     }
 }
@@ -3532,10 +3578,10 @@ if ($g_stdin) {
     $start_parse_time  = time();
     $import_logs_count = 0;
     printEvent("IMPORT", "Start importing logs. Every dot signs 500 parsed lines", 1);
-    while ($loop = getLine()) {
-        $s_output = $loop;
+    while (my $loop = getLine()) {
+        my $s_output = $loop;
         if (($import_logs_count > 0) && ($import_logs_count % 500 == 0)) {
-            $parse_time = $ev_unixtime - $start_parse_time;
+            my $parse_time = $ev_unixtime - $start_parse_time;
             if ($parse_time == 0) {
                 $parse_time++;
             }
@@ -3546,7 +3592,7 @@ if ($g_stdin) {
         handleIncoming("STDIN",$s_output);
     }
 
-    $end_time = time();
+    my $end_time = time();
     if ($import_logs_count > 0) {
          print "\n";
     }
@@ -3639,7 +3685,7 @@ if ($g_stdin == 0) {
     }
 
     # init HTTP
-    $daemon = Mojo::Server::Daemon->new(
+    my $daemon = Mojo::Server::Daemon->new(
         listen => ["http://0.0.0.0:$s_port"],
         silent => 1
     ) or do {
@@ -3648,6 +3694,20 @@ if ($g_stdin == 0) {
     };
     if ( $daemon ) {
         printEvent("HTTP", "Opening HTTP on port:$s_port ... OK", 1);
+
+        $daemon->on(request => sub {
+            my ($d, $tx) = @_;
+            my $ct = $tx->req->headers->content_type // '';
+            $ct =~ s/[^\x09\x20-\x7e]//g;
+            $tx->req->headers->content_type($ct || 'application/octet-stream');
+        });
+
+        # Prevent a single bad request from killing the I/O watcher.
+        Mojo::IOLoop->singleton->reactor->on(error => sub {
+            my ($reactor, $err) = @_;
+            printEvent("HTTP", "Reactor error (ignored): $err", 1);
+        });
+
         $daemon->on(request => sub {
             $ev_unixtime   = time();
             $ev_daemontime = $ev_unixtime;
@@ -3661,6 +3721,8 @@ if ($g_stdin == 0) {
             my @lines = split(/\r?\n/, $body);
             for my $data (@lines) {
                 next unless defined $data && length $data;
+                next if length($data) > 2048;             # reject absurdly long lines
+                next if $data =~ /[\x00-\x08\x0e-\x1f]/;  # reject binary control characters
                 $data = "L $data" unless $data =~ /^L /;
                 push @HTTPQ, [$addr, $data];
             }

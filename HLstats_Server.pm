@@ -329,7 +329,7 @@ sub set
             $self->{ingame_url}  = $value;
             $self->{ingame_url}  =~ s/\/hlstats.php//i;
             $self->{ingame_url}  =~ s/\/$//;
-            ::printEvent("SERVER", "Ingame-URL: ".$self->{ingame_url}, 1);
+            ::printEvent("SERVER", "Ingame-URL: ".$self->{ingame_url}, 1,"$self->{address}:$self->{port}");
         }
         return 1;
     }
@@ -376,7 +376,7 @@ sub init_rcon
     }
 
        if ($self->{rcon_obj}) {
-        ::printEvent ("HLSATSZ", "Connecting to rcon on $server_ip:$server_port ... ok",1);
+        ::printEvent ("HLSATSZ", "Connecting to rcon on $server_ip:$server_port ... ok",1,"$self->{address}:$self->{port}");
         if ($::g_mode eq "LAN") {
             $self->get_lan_players();
         }
@@ -393,11 +393,11 @@ sub dorcon
         # replace ; to avoid executing multiple rcon commands.
         $command  =~ s/;//g ;
 
-        ::printEvent("RCON", $command, 3);
+        ::printEvent("RCON", $command, 3,"$self->{address}:$self->{port}");
         $result = $rcon_obj->execute($command);
 
     } else {
-        ::printEvent("RCON", "error: No Object available",3);
+        ::printEvent("RCON", "error: No Object available",3,"$self->{address}:$self->{port}");
     }
     return $result;
 }
@@ -419,19 +419,19 @@ sub dorcon_multi
                 $cmd =~ s/;//g;
                 $fullcmd .="$cmd;";
             }
-            ::printEvent("RCON", $fullcmd, 3);
+            ::printEvent("RCON", $fullcmd, 3,"$self->{address}:$self->{port}");
             $result = $rcon_obj->execute($fullcmd);
         }
         else
         {
             foreach (@commands)
             {
-                ::printEvent("RCON", $_, 3);
+                ::printEvent("RCON", $_, 3,"$self->{address}:$self->{port}");
                 $result = $rcon_obj->execute($_);
             }
         }
     } else {
-      ::printEvent("RCON", "error: No Object available",3);
+      ::printEvent("RCON", "error: No Object available",3,"$self->{address}:$self->{port}");
     }
     return $result;
 }    
@@ -447,7 +447,7 @@ sub rcon_getaddress
     }
     else
     {
-        ::printEvent("Rcon", "error: No Object available",3);
+        ::printEvent("Rcon", "error: No Object available",3,"$self->{address}:$self->{port}");
     }
     return $result;
 }
@@ -468,7 +468,7 @@ sub rcon_getStatus
             $max_player_result = $visible_maxplayers;
         }
     } else {
-        ::printEvent("Rcon", "error: No Object available",3);
+        ::printEvent("Rcon", "error: No Object available",3,"$self->{address}:$self->{port}");
     }
     return ($map_result, $max_player_result, $servhostname, $difficulty);
 }
@@ -482,7 +482,7 @@ sub rcon_getplayers
     {
         %result = $rcon_obj->getPlayers();
     } else {
-        ::printEvent("Rcon", "error: No Object available",3);
+        ::printEvent("Rcon", "error: No Object available",3,"$self->{address}:$self->{port}");
     }
     return %result;
 }
@@ -505,7 +505,7 @@ sub track_server_load {
     } else {
 
         $string =~ /CPU.*\n(.*)\n*L{0,1}.*\Z/;
-        $string = $1;
+        $string = $1 // '';
         $string =~ /([^ ]+)\s+([^ ]+)\s+([^ ]+)\s+([^ ]+)\s+([^ ]+)\s+([^ ]+)\s+([^ ]+)\s*([^ ]*)/;
         $uptime = $4;
         $fps = $6;
@@ -564,7 +564,7 @@ sub get_map
     my ($self, $host) = @_;
 
     if (!$::g_stdin) {
-        if ( ( (time() - $self->{last_check}) > 120 ) || $fromupdate || ( $self->{map} ne $self->{server_map} ) || ( defined $host->{map} ) ) {
+        if ( ( (time() - $self->{last_check}) > 120 ) || ( $self->{map} ne $self->{server_map} ) || ( defined $host->{map} ) ) {
 
             $self->{last_check} = time();
             my $temp_map        = "";
@@ -575,11 +575,10 @@ sub get_map
             
             if ($self->{rcon_obj}) {
 
-                if (defined $host) {
+                if (defined $host && ($self->{play_game} != L4D() || $self->{"difficulty"} > 0)) {
                     $temp_map          = $host->{"map"};
                     $temp_maxplayers   = $host->{"max_players"};
                     $servhostname      = $host->{"name"};
-                    $difficulty        = $host->{"difficulty"} // 0;
                 } else {
                     ($temp_map, $temp_maxplayers, $servhostname, $difficulty) = $self->rcon_getStatus();
                 }
@@ -594,7 +593,7 @@ sub get_map
                     if (($temp_maxplayers != -1) && ($temp_maxplayers > 0) && ($temp_maxplayers)) {
                         if ($self->{maxplayers} != $temp_maxplayers) {
                             $self->{maxplayers} = $temp_maxplayers;
-                            ::printEvent("RCON", " Max players: $max_player_result",1);
+                            ::printEvent("RCON", " Max players: $temp_maxplayers",1,"$self->{address}:$self->{port}");
                             $update++;
                         }
                     }
@@ -614,7 +613,7 @@ sub get_map
                 $self->updateDB();
             }
 
-            ::printEvent("RCON", "Got map ".$self->{map}." successfully",3);
+            ::printEvent("RCON", "Got map ".$self->{map}." successfully",3,"$self->{address}:$self->{port}");
         }
     }
 
@@ -641,14 +640,14 @@ sub get_lan_players
                 server => $srv_addr
             };
         }
-        ::printEvent("RCON", "get_lan_players successfully",3);
+        ::printEvent("RCON", "get_lan_players successfully",3,"$self->{address}:$self->{port}");
     }
 }
 
 sub clear_winner
 {
   my ($self) = @_;
-  ::printEvent("clear_winner", '',3);
+  ::printEvent("SERVER", 'Clear Winner',3,"$self->{address}:$self->{port}");
   @{$self->{winner}} = ();
 }
 
@@ -656,7 +655,7 @@ sub add_round_winner
 {
     my ($self, $team) = @_;
   
-    ::printEvent("add_round_winner", '',3);
+    ::printEvent("add_round_winner", '',3,"$self->{address}:$self->{port}");
     $self->{winner}[($self->{map_rounds} % 7)] = $team;
     $self->increment("ba_map_rounds");
     $self->increment("map_rounds");
@@ -698,11 +697,11 @@ sub analyze_teams
   
     if (($::g_stdin == 0) && ($self->{num_trackable_players} < $self->{minplayers})) 
     {
-        ::printEvent("TEAMS", "(IGNORED) NOTMINPLAYERS: analyze_teams",3);
+        ::printEvent("TEAMS", "(IGNORED) NOTMINPLAYERS: analyze_teams",3,"$self->{address}:$self->{port}");
     }
     elsif (($::g_stdin == 0) && ($self->{ba_enabled} > 0))
     {
-        ::printEvent("TEAMS", "analyze_teams",3);
+        ::printEvent("TEAMS", "analyze_teams",3,"$self->{address}:$self->{port}");
         my $ts_skill     = 0;
         my $ts_avg_skill = 0;
         my $ts_count     = 0;
@@ -755,7 +754,7 @@ sub analyze_teams
         @ct_players = sort { $b->[6] <=> $a->[6]} @ct_players;
         @ts_players = sort { $b->[6] <=> $a->[6]} @ts_players;
     
-        ::printEvent("TEAM", "Checking Teams", 3);
+        ::printEvent("TEAM", "Checking Teams", 3,"$self->{address}:$self->{port}");
         $admin_msg = "AUTO-TEAM BALANCER: CT ($ct_count) $ct_kills:$ct_deaths  [$ct_wins - $ts_wins] $ts_kills:$ts_deaths ($ts_count) TS";
         if ($self->{player_events} == 1)  
         {
@@ -1014,12 +1013,12 @@ sub flushDB
     ($self->{total_kills}, $self->{total_headshots}, $self->{total_suicides},$self->{total_rounds},$self->{total_shots},$self->{total_hits},$self->{server_map}) = $result->fetchrow_array();
     $result->finish;
 
-    my $result = ::exec_cache(
+    my $result2 = ::exec_cache(
         "get_player_count",
         "SELECT count(*) as players FROM hlstats_Players WHERE game=? AND hideranking <> 1 AND lastAddress <> ''",
         $self->{game});
-    $self->{players} = $result->fetchrow_array();
-    $result->finish;
+    $self->{players} = $result2->fetchrow_array();
+    $result2->finish;
 
     # Update player details
     my $query = "
@@ -1284,7 +1283,7 @@ sub updatePlayerCount
     my ($self) = @_;
     
     if ($::g_debug > 1) {
-        ::printEvent("SERVER", "Updating Player Count",3);
+        ::printEvent("SERVER", "Updating Player Count",3,"$self->{address}:$self->{port}");
     }
     
     my $trackable = 0;

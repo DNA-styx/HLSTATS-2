@@ -121,7 +121,7 @@ sub _open_socket
 
     delete $self->{_rcon_challenge};
 
-    my $proto = $self->{_proto};
+    my $proto = getprotobyname('udp') // 0;
     socket($self->{rcon_socket}, PF_INET, SOCK_DGRAM, $proto);
     unless ($self->{"rcon_socket"}) {
         ::printEvent("RCON", "Cannot setup UDP socket: $!",1,"$self->{address}:$self->{server_port}");
@@ -294,7 +294,7 @@ sub destroy {
 sub getPlayers
 {
     my ($self) = @_;
-    my $status = $self->execute("status");
+    my $status = $self->execute("status") // '';
     my $server = "$self->{server_object}->{address}:$self->{server_object}->{port}";
 
     my @lines = split(/[\r\n]+/, $status);
@@ -382,7 +382,7 @@ sub getPlayers
 sub getServerData
 {
   my ($self) = @_;
-  my $status = $self->execute("status");
+  my $status = $self->execute("status") // '';
 
   my @lines = split(/[\r\n]+/, $status);
 
@@ -411,7 +411,7 @@ sub getServerData
 sub getVisiblePlayers
 {
   my ($self) = @_;
-  my $status = $self->execute("sv_visiblemaxplayers");
+  my $status = $self->execute("sv_visiblemaxplayers") // '';
   
   my @lines = split(/[\r\n]+/, $status);
   

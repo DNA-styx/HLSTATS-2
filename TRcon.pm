@@ -98,7 +98,7 @@ sub sendrecv
           shutdown($self->{"rcon_socket"}, 2);
           $self->{"rcon_socket"}->close();
           $self->{"rcon_socket"} = undef;
-          ::printEvent("RCON", "Closing TCP socket: $!",1, "$server_object->{address}:$server_object->{port}");
+          ::printEvent("RCON", "Closing TCP socket $!",1, "$server_object->{address}:$server_object->{port}");
       }
 
       ::printEvent("RCON", "Attempting TCP socket",1, "$server_object->{address}:$server_object->{port}");
@@ -111,7 +111,7 @@ sub sendrecv
       );
 
       unless ($self->{"rcon_socket"}) {
-          ::printEvent("RCON", "Cannot setup TCP socket: $!",1, "$server_object->{address}:$server_object->{port}");
+          ::printEvent("RCON", "Cannot setup TCP socket $!",1, "$server_object->{address}:$server_object->{port}");
       } else {
           ::printEvent("RCON", " TCP socket is now open",1, "$server_object->{address}:$server_object->{port}");
           binmode($self->{"rcon_socket"}, ':raw');
@@ -250,7 +250,7 @@ sub _read_exact {
             return undef if $n == 0;  # EOF
             $buf .= $chunk;
         } else {
-            ::printEvent("RCON", "Socket read error: $!", 1);
+            ::printEvent("RCON", "Socket read error $!", 1);
             return undef;
         }
     }

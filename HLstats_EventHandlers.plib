@@ -2412,7 +2412,7 @@ sub doEvent_Chat
         elsif (($message =~ /^\/?kdratio([ ][0-9]+)?$/i) || ($message =~ /^\/?kdeath([ ][0-9]+)?$/i) || ($message =~ /^\/?kpd([ ][0-9]+)?$/i)) {
             my $userid = 0;
             my $found = 0;
-            if ($1 eq "") {
+            if (!defined($1) || $1 eq "") {
                 $found++;
             } else {
                 $userid = $1;

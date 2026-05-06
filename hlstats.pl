@@ -3091,25 +3091,31 @@ sub handleData
             # Clean up
             my %players_temp   = %{ $g_servers{$server}->{"srv_players"} };
             if (%players_temp) {
-                my $_check=1;
+                my $_check  = 0;
+                my $_active = 0;
                 while (my ($pl, $player) = each %players_temp) {
                     if ( ($ev_daemontime - $player->{timestamp}) < 30 ) {
-                        $_check=0; #active player: no rcon
+                        $_active = 1; # active player: no rcon
+                    }
+                    if ($player->{is_bot} == 0 && $player->{ping} == 0) {
+                        $_check = 1; # no ping: rcon
                         last;
                     }
                 }
-                if ($_check) {
+                if ($_check == 1 || $_active == 0) {
                     my %status_players = $g_servers{$server}->rcon_getplayers();
                     if ( defined $status_players{"host"}->{"name"} || $g_servers{$server}->{rcon_obj}->{rcon_err} >= 3 ) {
                         # remove idling players
+                        printEvent("RCON", "STATUS: Updating players list...",3, $server);
+                        keys %players_temp;
                         while (my ($pl, $player) = each %players_temp) {
                             my $userid    = $player->{userid};
                             my $uniqueid  = $player->{uniqueid};
                             my $key       = ($::g_mode eq "NameTrack") ? $player->{name} : ($::g_mode eq "LAN") ? $server : $uniqueid;
                             if (!defined($status_players{$key})) {
-                                printEvent("PLAYER", "Auto-disconnecting " . $player->{name} ." for idling (" . ($ev_daemontime - $player->{timestamp}) . " sec)",3);
+                                printEvent("PLAYER", "Auto-disconnecting " . $player->{name} ." for idling (" . ($ev_daemontime - $player->{timestamp}) . " sec)",3, $server);
                                 removePlayer($server, $userid, $uniqueid);
-                            } elsif ( !$player->{is_bot} ) {
+                            } elsif ( $player->{is_bot} == 0 ) { 
                                 $player->{ping} = $status_players{$key}->{Ping} if ($status_players{$key}->{Ping} > 0);
                                 if ( $status_players{$key}->{Address} && $player->{address} ne $status_players{$key}->{Address} ) {
                                     $player->{address} = $status_players{$key}->{Address};
@@ -3121,7 +3127,7 @@ sub handleData
                         # update map/hostname
                         $g_servers{$server}->get_map($status_players{"host"}) if $status_players{"host"}->{"map"};
                     }
-                } elsif (!$g_servers{$server}->{map}) {
+                } elsif ($g_servers{$server}->{map} eq "") {
                     $g_servers{$server}->get_map();
                 }
 

@@ -597,8 +597,9 @@ sub get_map
                             $update++;
                         }
                     }
-                    if (($difficulty > 0) && ($self->{play_game} == L4D())) {
+                    if (($difficulty > 0) && ($self->{play_game} == L4D()) && ($self->{difficulty} != $difficulty) ) {
                         $self->{difficulty} = $difficulty;
+                        ::printEvent("RCON", "Set difficulty ".$self->{difficulty}." successfully",3,"$self->{address}:$self->{port}");
                     }
                     if (($self->{update_hostname} > 0) && ($self->{name} ne $servhostname) && ($servhostname)) {
                         $self->{name} = $servhostname;
@@ -610,10 +611,10 @@ sub get_map
             }
 
             if ($update > 0) {
+                ::printEvent("RCON", "Got map ".$self->{map}." successfully",3,"$self->{address}:$self->{port}");
                 $self->updateDB();
             }
 
-            ::printEvent("RCON", "Got map ".$self->{map}." successfully",3,"$self->{address}:$self->{port}");
         }
     }
 
@@ -1189,7 +1190,8 @@ sub update_server_loc {
 sub messageAll
 {
     my($self, $msg, $noshow, $force) = @_;
-    
+    $noshow //= '';
+    $force //= '';
     if ($self->{broadcasting_events} == 1 || $force == 1)
     {
         if ($self->{mod} eq "SOURCEMOD" || $self->{mod} eq "AMXX")

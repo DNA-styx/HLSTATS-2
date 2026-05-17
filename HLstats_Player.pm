@@ -389,7 +389,7 @@ sub setName
     # Decode to a Perl character string so DBD::mysql doesn't pass invalid UTF-8 to MySQL.
     $name = decode('UTF-8', $name, Encode::FB_DEFAULT) unless is_utf8($name);
     $name =~ s/[\x00-\x1f\x7f\x{FFFD}]//g;
-    $name = substr($name, 0, 252);    # byte cap: varchar(64) utf8mb4 = 256 bytes max; Steam names <= 32 chars = 128 bytes max
+    $name = substr($name, 0, 64);
 
     my $old = $self->{name};
 
@@ -454,7 +454,7 @@ sub flushDB {
     # Snapshot frequently used fields
     my $name          = is_utf8($self->{name}) ? $self->{name} : decode('UTF-8', $self->{name}, Encode::FB_DEFAULT);
     $name =~ s/[\x00-\x1f\x7f]//g;
-    $name = substr($name, 0, 252);    # byte cap: varchar(64) utf8mb4 = 256 bytes max
+    $name = substr($name, 0, 64);
     my $clan          = $self->{clan} + 0;
     my $kills         = $self->{kills};
     my $deaths        = $self->{deaths};

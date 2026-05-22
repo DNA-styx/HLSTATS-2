@@ -150,7 +150,7 @@ On the machine that hosts your SQL database — not on your game server.
 Set `PathPerl` and `PathAwards` / `PathBans` in `hlstats.conf`. The built-in cronjob fires automatically once per day.
 
 **How do I ignore Warmup or End-of-Round?**  
-In the server's database entry set `BonusRoundIgnore = 1`.
+In the `Game Settings` > `Configure` > entry set `BonusRoundIgnore = 1`.
 
 **Does it support multiple servers?**  
 Yes. Add each server to the database; the daemon handles all of them in a single process.  

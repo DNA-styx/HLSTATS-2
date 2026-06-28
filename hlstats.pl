@@ -1677,6 +1677,10 @@ sub handleIncoming
                 }
             } else {
                 $g_servers{$s_addr}->set("broadcasting_events",               0);
+                if ($s_cfg{"BroadCastEventsCommandAnnounce"} eq "ma_hlx_csay") {
+                    $s_cfg{"BroadCastEventsCommandAnnounce"} = $s_cfg{"BroadCastEventsCommandAnnounce"}." #all";
+                }
+                $g_servers{$s_addr}->set("broadcasting_command_announce", $s_cfg{"BroadCastEventsCommandAnnounce"});
                 printEvent("SERVER", "Broadcasting Live-Events is disabled", 1); 
             }
     

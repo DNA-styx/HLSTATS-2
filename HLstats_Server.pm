@@ -543,7 +543,7 @@ sub dostats
 
     if (($::g_stdin == 0) && ($rcon_obj) && ($self->{rcon} ne ""))  
     {
-        if ($self->{broadcasting_events} == 1)
+        if ($self->{show_stats} == 1)
         {
             my $hpk = sprintf("%.0f", 0);
 

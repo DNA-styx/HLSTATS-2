@@ -1016,8 +1016,8 @@ sub flushDB
 
     my $result2 = ::exec_cache(
         "get_player_count",
-        "SELECT count(*) as players FROM hlstats_Players WHERE game=? AND hideranking <> 1 AND lastAddress <> ''",
-        $self->{game});
+        "SELECT count(DISTINCT c.playerId) as players FROM hlstats_Events_Connects c INNER JOIN hlstats_Players p ON p.playerId = c.playerId WHERE c.serverId=? AND p.hideranking <> 1",
+        $self->{id});
     $self->{players} = $result2->fetchrow_array();
     $result2->finish;
 
